@@ -4,11 +4,12 @@ import com.github.sh0nk.matplotlib4j.Plot;
 import lombok.SneakyThrows;
 import model.Point;
 import utility.FileUtility;
-import utility.ProcessingUtility;
 
 import java.util.*;
 
+import static utility.LogUtility.*;
 import static utility.MathUtility.*;
+import static utility.ProcessingUtility.*;
 
 public class BaseAlgorithm {
 
@@ -19,27 +20,29 @@ public class BaseAlgorithm {
         var trajectories = extractTrajectories(args);
         var randomIndex = generateIndexFrom(trajectories);
         var anotherRandomIndex = generateIndexFrom(trajectories);
-        var sampleTrajectory = trajectories.get(13);
-        var randomTrajectory = trajectories.get(1);
+        var sampleTrajectory = trajectories.get(2);
+        var randomTrajectory = trajectories.get(3);
         var sampleWithNoise = addNoise(sampleTrajectory, 0.0005);
-        var randomBandwidth = random.nextInt(20, 78);
-        System.out.println("Sample size: " + sampleTrajectory.size());
-        System.out.println("Random size: " + randomTrajectory.size());
-        System.out.println("Bandwidth: " + randomBandwidth);
 
-        Map<String, Integer> sakoeChibaMap = createSakoeChibaMap(sampleTrajectory.size(), randomTrajectory.size(), randomBandwidth);
-        List<Integer> lowerBounds = calculateLowerBound(sakoeChibaMap, sampleTrajectory.size());
-        List<Integer> upperBounds = calculateUpperBound(sakoeChibaMap, sampleTrajectory.size());
-        List<List<Integer>> bandwidthIndeces = new ArrayList<>();
-        bandwidthIndeces.add(lowerBounds);
-        bandwidthIndeces.add(upperBounds);
-        System.out.println(lowerBounds);
-        System.out.println(upperBounds);
-        // np.clip(bandwidthIndeces[:, :sampleTrajectory.size()], 0, randomTrajectory.size())
+//        int randomBandwidth = random.nextInt(20, 30);
+        double randomBandwidth = random.nextDouble(0, 1);
 
+        var constraintRegion = computeConstraintRegion(sampleTrajectory.size(), randomTrajectory.size(), randomBandwidth);
+        var lowerBounds = constraintRegion.get(0);
+        var upperBounds = constraintRegion.get(1);
 
-        double[][] distanceMatrix = buildDistanceMatrix(sampleTrajectory, randomTrajectory);
-//        ProcessingUtility.prettyPrintMatrix(distanceMatrix, ">>> Cumulative distance matrix:");
+        if (isDtwPrinting()) {
+            System.out.println("Sample size: " + sampleTrajectory.size());
+            System.out.println("Random size: " + randomTrajectory.size());
+            System.out.println("Bandwidth: " + randomBandwidth);
+            System.out.println("lowerBounds: \n" + lowerBounds);
+            System.out.println("upperBounds: \n" + upperBounds);
+        }
+
+        double[][] distanceMatrix = buildDistanceMatrix(sampleTrajectory, randomTrajectory, constraintRegion);
+//        prettyPrintMatrix(distanceMatrix, ">>> Cumulative distance matrix:");
+
+//        double[] slicedArray = Arrays.stream(distanceMatrix[0], 0, 16).toArray();
 
         var indicesOfOptimalPath = warpingPath(
                 sampleTrajectory.size() - 1,
@@ -53,12 +56,12 @@ public class BaseAlgorithm {
             xIndices.add(indexPair.get(0));
             yIndices.add(indexPair.get(1));
         }
+
         Plot plt = Plot.create();
         plt.subplot(2, 1, 1);
-        plt.plot().add(xIndices, yIndices, "o").label("Optimal warping path");
-        plt.xlim(-1, sampleTrajectory.size());
-        plt.ylim(-1, randomTrajectory.size());
+        plt.plot().add(xIndices, yIndices, "o");
         plt.legend().loc("best");
+        plt.title("Optimal warping path");
 
         List<Double> distances = new ArrayList<>();
         for (double[] rows : distanceMatrix) {
@@ -67,10 +70,19 @@ public class BaseAlgorithm {
             }
         }
 
-        plt.subplot(2, 1, 2);
-        plt.plot().add(xIndices, yIndices, "o").label("Distance matrix weighted by greyscale");
+//        List<Double> x = NumpyUtils.linspace(0, sampleTrajectory.size(), 100);
+//        List<Double> y = NumpyUtils.linspace(0, randomTrajectory.size(), 100);
+//        NumpyUtils.Grid<Double> grid = NumpyUtils.meshgrid(x, y);
+//        List<List<Double>> cCalced = grid.calcZ((xi, yj) -> Math.sqrt(xi * xi + yj * yj));
+//
+//        plt.pcolor().add(x, y, cCalced).cmap("plt.cm.Greys");
 
-        plt.show();
+//        plt.subplot(2, 1, 2);
+//        plt.hist().add(xIndices, yIndices, "o").label("Distance matrix weighted by greyscale");
+//        plt.xlim(-1, sampleTrajectory.size());
+//        plt.ylim(-1, randomTrajectory.size());
+
+//        plt.show();
     }
 
     private static List<List<Integer>> warpingPath(int xDimension, int yDimension, double[][] distanceMatrix) {
@@ -110,17 +122,37 @@ public class BaseAlgorithm {
         return indexPairs;
     }
 
-    private static double[][] buildDistanceMatrix(List<Point> queryTrajectory, List<Point> compareTrajectory) {
+    private static double[][] buildDistanceMatrix(
+            List<Point> queryTrajectory,
+            List<Point> compareTrajectory,
+            List<List<Integer>> constraintRegion) {
         int rowSize = queryTrajectory.size();
         int columnSize = compareTrajectory.size();
         double[][] distanceMatrix = new double[rowSize][columnSize];
 
-        for (int i = 0; i < rowSize; i++) {
-            for (int j = 0; j < columnSize; j++) {
-                distanceMatrix[i][j] = round(getDistance(queryTrajectory.get(i), compareTrajectory.get(j)), 4);
+        for (int currentRow = 0; currentRow < rowSize; currentRow++) {
+            for (int currentColumn = 0; currentColumn < columnSize; currentColumn++) {
+
+                boolean withinConstraintRegion = isWithinConstraintRegion(constraintRegion, currentRow, currentColumn);
+                if (withinConstraintRegion) {
+                    distanceMatrix[currentRow][currentColumn] = round(getDistance(
+                            queryTrajectory.get(currentRow),
+                            compareTrajectory.get(currentColumn)),
+                            4
+                    );
+                } else {
+                    distanceMatrix[currentRow][currentColumn] = Integer.MAX_VALUE;
+                }
             }
         }
         return distanceMatrix;
+    }
+
+    private static boolean isWithinConstraintRegion(List<List<Integer>> constraintRegion, int row, int column) {
+        var lowerBound = constraintRegion.get(0).get(row);
+        var upperBound = constraintRegion.get(1).get(row);
+
+        return lowerBound <= column && column <= upperBound;
     }
 
     private static List<List<Point>> extractTrajectories(String[] runtimeParams) {
@@ -129,7 +161,7 @@ public class BaseAlgorithm {
 
         var file = FileUtility.readFile(fileToRead, ignoreHeader);
 
-        return ProcessingUtility.transformFileToTrajectories(file);
+        return transformFileToTrajectories(file);
     }
 
 }

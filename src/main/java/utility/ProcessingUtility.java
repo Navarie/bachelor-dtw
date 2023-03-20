@@ -14,6 +14,8 @@ import java.util.*;
 @UtilityClass
 public class ProcessingUtility {
 
+    private static final Random random = new Random();
+
     private final DateTimeFormatter dtFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.US)
             .withZone(ZoneId.of("Europe/Copenhagen"));
 
@@ -55,21 +57,49 @@ public class ProcessingUtility {
     }
 
     public void prettyPrintMatrix(double[][] matrix, String printStatement) {
-        var df = new DecimalFormat("####0.0000");
+        var df = new DecimalFormat("####0.00");
         df.setDecimalFormatSymbols(DecimalFormatSymbols.getInstance(Locale.US));
 
         System.out.println(printStatement);
         for (double[] row : matrix) {
-            var builtString = new StringBuilder();
-            builtString.append("[");
-            for (double value : row) {
-                builtString.append(df.format(value)).append(", ");
-            }
-            builtString.deleteCharAt(builtString.length() - 1);
-            builtString.deleteCharAt(builtString.length() - 1);
-            builtString.append("]");
-
-            System.out.println(builtString);
+            buildString(row, df);
         }
+    }
+
+    public void prettyPrintMatrix(double[] matrix, String printStatement) {
+        var df = new DecimalFormat("####0.00");
+        df.setDecimalFormatSymbols(DecimalFormatSymbols.getInstance(Locale.US));
+
+        System.out.println(printStatement);
+        buildString(matrix, df);
+    }
+
+    private void buildString(double[] matrix, DecimalFormat df) {
+        var builtString = new StringBuilder();
+        builtString.append("[");
+        for (double value : matrix) {
+            builtString.append(df.format(value)).append(", ");
+        }
+        builtString.deleteCharAt(builtString.length() - 1);
+        builtString.deleteCharAt(builtString.length() - 1);
+        builtString.append("]");
+
+        System.out.println(builtString);
+    }
+
+    public List<Double> generateRandomList() {
+        List<Double> randomList = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            randomList.add((double) random.nextInt(0, 8));
+        }
+        return randomList;
+    }
+
+    public List<Double> generateRandom16List() {
+        List<Double> randomList = new ArrayList<>();
+        for (int i = 0; i < 16; i++) {
+            randomList.add((double) random.nextInt(0, 8));
+        }
+        return randomList;
     }
 }
